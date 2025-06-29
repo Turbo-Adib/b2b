@@ -1,0 +1,455 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model for authentication (single user system)
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  opportunities      Opportunity[]
+  alerts            Alert[]
+  notes             Note[]
+  savedSearches     SavedSearch[]
+  reports           Report[]
+}
+
+// Core regulatory opportunity tracking
+model Opportunity {
+  id                    String    @id @default(cuid())
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id])
+  
+  // Basic information
+  title                 String
+  description           String    @db.Text
+  regulationType        String    // regulation, directive, implementing_act, etc.
+  regulationReference   String?   // Official regulation number/reference
+  
+  // Timeline
+  identifiedAt          DateTime  @default(now())
+  implementationDate    DateTime?
+  deadlineDate          DateTime?
+  leadTimeMonths        Int?      // Calculated lead time
+  
+  // Scoring and classification
+  opportunityScore      Float     @default(0)
+  revenuePotential      RevenuePotential @default(MEDIUM)
+  marketGap             MarketGap        @default(MEDIUM)
+  competitionLevel      CompetitionLevel @default(MEDIUM)
+  
+  // Status tracking
+  status                OpportunityStatus @default(IDENTIFIED)
+  priority              Priority         @default(MEDIUM)
+  
+  // Legislative tracking
+  legislativeStage      String?
+  lastLegislativeUpdate DateTime?
+  
+  // Analysis fields
+  complianceRequirements String?   @db.Text
+  targetIndustries      String[]
+  affectedCountries     String[]
+  estimatedMarketSize   Decimal?  @db.Decimal(15, 2)
+  
+  // Relationships
+  alerts                Alert[]
+  notes                 Note[]
+  competitors           CompetitorActivity[]
+  governmentContacts    GovernmentContact[]
+  documents             Document[]
+  researchTasks         ResearchTask[]
+  
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@index([userId, status])
+  @@index([opportunityScore])
+  @@index([implementationDate])
+}
+
+// Competitor tracking
+model CompetitorActivity {
+  id              String    @id @default(cuid())
+  opportunityId   String
+  opportunity     Opportunity @relation(fields: [opportunityId], references: [id])
+  
+  competitorName  String
+  activityType    String    // linkedin_post, conference_speaker, tender_application, etc.
+  activityDate    DateTime
+  description     String    @db.Text
+  sourceUrl       String?
+  threatLevel     ThreatLevel @default(LOW)
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@index([opportunityId])
+}
+
+// Government contact mapping
+model GovernmentContact {
+  id              String    @id @default(cuid())
+  opportunityId   String?
+  opportunity     Opportunity? @relation(fields: [opportunityId], references: [id])
+  
+  name            String
+  title           String
+  department      String
+  email           String?
+  phone           String?
+  linkedinUrl     String?
+  
+  role            String    // implementation_lead, policy_maker, tender_authority, etc.
+  influence       InfluenceLevel @default(MEDIUM)
+  lastContact     DateTime?
+  notes           String?   @db.Text
+  
+  procurements    Procurement[]
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// Procurement and tender tracking
+model Procurement {
+  id                String    @id @default(cuid())
+  
+  title             String
+  description       String    @db.Text
+  procurementNumber String?
+  
+  region            String    // EU, US, Singapore, UAE, etc.
+  issuingAuthority  String
+  publishDate       DateTime
+  submissionDeadline DateTime?
+  
+  estimatedValue    Decimal?  @db.Decimal(15, 2)
+  currency          String?
+  
+  status            ProcurementStatus @default(OPEN)
+  serviceGap        Boolean   @default(false)
+  bottleneck        Boolean   @default(false)
+  
+  // Analysis
+  gapAnalysis       String?   @db.Text
+  proposalDraft     String?   @db.Text
+  winProbability    Float?
+  
+  // Relationships
+  contacts          GovernmentContact[]
+  documents         Document[]
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@index([region, status])
+  @@index([submissionDeadline])
+}
+
+// Private market intelligence - Company tracking
+model Company {
+  id                String    @id @default(cuid())
+  
+  name              String
+  website           String?
+  linkedinUrl       String?
+  industry          String
+  
+  // Funding information
+  lastFundingRound  String?   // Series A, B, C, etc.
+  lastFundingAmount Decimal?  @db.Decimal(15, 2)
+  lastFundingDate   DateTime?
+  totalFunding      Decimal?  @db.Decimal(15, 2)
+  
+  // Pressure indicators
+  pressureScore     Float     @default(0)
+  gtmGapDetected    Boolean   @default(false)
+  executiveTurnover Boolean   @default(false)
+  
+  // Analysis
+  analysisNotes     String?   @db.Text
+  
+  executives        Executive[]
+  alerts           Alert[]
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@index([pressureScore])
+}
+
+// Executive tracking for vulnerability analysis
+model Executive {
+  id                String    @id @default(cuid())
+  companyId         String
+  company           Company   @relation(fields: [companyId], references: [id])
+  
+  name              String
+  title             String    // CEO, CMO, CRO, etc.
+  linkedinUrl       String?
+  email             String?
+  
+  // Risk assessment
+  vulnerabilityScore Float    @default(0)
+  riskFactors       String[]  // pipeline_pressure, ad_spend_waste, board_pressure, etc.
+  
+  // Social signals
+  lastLinkedinPost  DateTime?
+  desperationSignals String[]  // hiring_rockstars, culture_posts, vision_posts, etc.
+  
+  // Analysis
+  notes             String?   @db.Text
+  opportunityType   String?   // reputation_insurance, quick_wins, crisis_prevention
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  @@index([companyId, vulnerabilityScore])
+}
+
+// Alert system
+model Alert {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  
+  type            AlertType
+  priority        Priority  @default(MEDIUM)
+  title           String
+  message         String    @db.Text
+  
+  // Related entities
+  opportunityId   String?
+  opportunity     Opportunity? @relation(fields: [opportunityId], references: [id])
+  companyId       String?
+  company         Company?     @relation(fields: [companyId], references: [id])
+  
+  isRead          Boolean   @default(false)
+  actionRequired  Boolean   @default(false)
+  actionUrl       String?
+  
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime?
+  
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+// Document storage
+model Document {
+  id              String    @id @default(cuid())
+  
+  title           String
+  type            DocumentType
+  url             String?   // External URL or file path
+  content         String?   @db.Text
+  summary         String?   @db.Text
+  
+  // Relationships
+  opportunityId   String?
+  opportunity     Opportunity? @relation(fields: [opportunityId], references: [id])
+  procurementId   String?
+  procurement     Procurement? @relation(fields: [procurementId], references: [id])
+  
+  metadata        Json?     // Additional metadata
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// Research notes
+model Note {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  
+  title           String
+  content         String    @db.Text
+  tags            String[]
+  
+  opportunityId   String?
+  opportunity     Opportunity? @relation(fields: [opportunityId], references: [id])
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@index([userId])
+}
+
+// Saved searches for monitoring
+model SavedSearch {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  
+  name            String
+  searchType      SearchType
+  query           Json      // Search parameters
+  frequency       SearchFrequency @default(DAILY)
+  
+  lastRun         DateTime?
+  isActive        Boolean   @default(true)
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// Research tasks
+model ResearchTask {
+  id              String    @id @default(cuid())
+  opportunityId   String
+  opportunity     Opportunity @relation(fields: [opportunityId], references: [id])
+  
+  title           String
+  description     String?   @db.Text
+  status          TaskStatus @default(PENDING)
+  priority        Priority   @default(MEDIUM)
+  dueDate         DateTime?
+  completedAt     DateTime?
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// Generated reports
+model Report {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  
+  type            ReportType
+  title           String
+  content         String    @db.Text
+  metadata        Json?
+  
+  generatedAt     DateTime  @default(now())
+}
+
+// Enums
+enum OpportunityStatus {
+  IDENTIFIED
+  RESEARCHING
+  POSITIONING
+  PURSUING
+  WON
+  LOST
+  ARCHIVED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RevenuePotential {
+  LOW
+  MEDIUM
+  HIGH
+  VERY_HIGH
+}
+
+enum MarketGap {
+  LOW
+  MEDIUM
+  HIGH
+  VERY_HIGH
+}
+
+enum CompetitionLevel {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
+  SATURATED
+}
+
+enum ThreatLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum InfluenceLevel {
+  LOW
+  MEDIUM
+  HIGH
+  KEY_DECISION_MAKER
+}
+
+enum ProcurementStatus {
+  UPCOMING
+  OPEN
+  CLOSED
+  AWARDED
+  CANCELLED
+}
+
+enum AlertType {
+  NEW_OPPORTUNITY
+  LEGISLATIVE_UPDATE
+  COMPETITOR_ACTIVITY
+  PROCUREMENT_MATCH
+  DEADLINE_APPROACHING
+  EXECUTIVE_VULNERABILITY
+  FUNDING_ROUND
+  MARKET_SIGNAL
+}
+
+enum DocumentType {
+  REGULATION_TEXT
+  POLICY_DOCUMENT
+  TENDER_DOCUMENT
+  RESEARCH_REPORT
+  COMPETITOR_ANALYSIS
+  PROPOSAL_DRAFT
+  CONTRACT
+  OTHER
+}
+
+enum SearchType {
+  REGULATION
+  PROCUREMENT
+  COMPANY
+  EXECUTIVE
+  KEYWORD
+}
+
+enum SearchFrequency {
+  HOURLY
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ReportType {
+  DAILY_BRIEFING
+  WEEKLY_STRATEGIC
+  MONTHLY_ANALYSIS
+  OPPORTUNITY_DEEP_DIVE
+  COMPETITIVE_LANDSCAPE
+  MARKET_CHAOS
+}
